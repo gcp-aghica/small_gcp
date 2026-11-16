@@ -4,7 +4,7 @@
 
 | Вариант | Цена | Environments + branch policy | Rulesets | Required reviewers на environment |
 |---|---|---|---|---|
-| **Free org, public репо** (по умолчанию) | $0 | ✅ | ✅ | ✅ |
+| **Free org, public репо** (выбрано) | $0 | ✅ | ✅ | ✅ |
 | Team org, private репо | $4 × 2 = $8/мес | ✅ | ✅ | ❌ (для private нужен Enterprise) |
 
 Секретов в репо нет: доступ через WIF, токен лежит в Secret Manager. Поэтому public безопасен.
@@ -24,7 +24,7 @@ OIDC `sub` будет `repo:<ORG>/<REPO>:…`. Так же записаны prin
 ---
 
 ## 1. Организация и участники (под A)
-1. **+ → New organization** → план **Free** (или Team), имя `<ORG>`.
+1. **+ → New organization** → план **Free**, имя `<ORG>`.
 2. **Org → People → Invite member** → аккаунт B, роль **Member**. B принимает приглашение из письма или с github.com/orgs/<ORG>.
 3. (Опционально) **Org → Teams → New team** `developers`, добавить туда B. Права в репо тогда выдаются команде, а не человеку, как в рабочей org.
 4. **Org Settings → Member privileges**:
@@ -47,7 +47,7 @@ OIDC `sub` будет `repo:<ORG>/<REPO>:…`. Так же записаны prin
 *Зачем:* в Resilens allowlist actions почти наверняка уже есть. Здесь видно, что любое новое action придётся согласовывать с админами org.
 
 ## 3. Репозиторий (под A)
-1. **Org → Repositories → New** → `<REPO>`, **Public** (или Private на Team), без README, .gitignore и license.
+1. **Org → Repositories → New** → `<REPO>`, **Public**, без README, .gitignore и license.
 2. **Repo → Settings → Collaborators and teams → Add people/team** → B (или team `developers`) с ролью **Write**.
 3. **Repo → Settings → Actions → General** → проверить, что workflow permissions = Read: org-уровень наследуется.
 
@@ -70,7 +70,7 @@ OIDC `sub` будет `repo:<ORG>/<REPO>:…`. Так же записаны prin
 
 Environment secrets не создаём: секретов в GitHub нет.
 
-(Опционально, только public) Environment `prod-like`:
+(Опционально) Environment `prod-like`:
 - deployment branches `main`;
 - **Required reviewers** = A;
 - ✅ *Prevent self-review*.

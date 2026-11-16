@@ -27,5 +27,5 @@
 ## GitHub
 - Settings → Environments → `dev` → Delete.
 - Удалить repository variables и правило защиты ветки, либо весь репозиторий: Settings → Danger zone.
-- Целиком: **Org Settings → Delete this organization** (удаляет и репо). На Team сначала понизить план до Free в **Org Settings → Billing and plans**.
+- Целиком: **Org Settings → Delete this organization** (удаляет и репо).
 - Если второму участнику выдавали Viewer в GCP-проекте, убрать его в **IAM → IAM** (при варианте A уходит вместе с проектом).

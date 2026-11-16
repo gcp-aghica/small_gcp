@@ -30,7 +30,7 @@ make build && docker run --rm -p 8000:8000 -e API_TOKEN=local local/demo-api:dev
 5. B может открыть PR, но `git push origin main` отклоняется ruleset-ом.
 6. Merge без зелёных `lint`/`test` или с устаревшей веткой невозможен.
 7. B не видит Settings: environments, variables и rulesets не открываются и не меняются.
-8. (Опционально, public) Environment `prod-like` с required reviewer: B мержит, деплой ждёт approve от A. Self-review запрещён.
+8. (Опционально) Environment `prod-like` с required reviewer: B мержит, деплой ждёт approve от A. Self-review запрещён.
 9. (Опционально) У B в GCP есть только Viewer: `gcloud run services update-traffic` → `PERMISSION_DENIED`. Деплоить можно только через WIF.
 
 ## Что пошло не так и как починили
