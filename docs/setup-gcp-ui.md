@@ -56,7 +56,7 @@ SA `app-runtime`, `app-ci`, `app-deployer`, WIF-пул и провайдер `gi
 **Cloud Run → Deploy container → Service**:
 - Container image URL: `us-docker.pkg.dev/cloudrun/container/hello`
 - Service name `demo-api`, Region `<REGION>`
-- Authentication: **Allow public access** (allUsers получает Cloud Run Invoker)
+- Authentication: **Allow public access**. Новая Console включает это не привязкой `allUsers` → `run.invoker`, а флагом сервиса *Invoker IAM check: disabled* (`run.googleapis.com/invoker-iam-disabled: true`). Результат тот же: URL сервиса и его тегов отвечает без Google-аутентификации, поэтому в `get-iam-policy` сервиса `allUsers` не будет.
 - Billing: Request-based, Scaling: **Min instances 0**
 - Раскрыть **Containers, Volumes, Networking, Security → Security** → Service account `app-runtime`
 - **Create**
@@ -86,7 +86,16 @@ projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/provider
 
 ## 7. CI SA `app-ci` (только пуш образов)
 1. **Service Accounts → Create**: ID `app-ci`, без ролей на проект.
-2. **Artifact Registry → `apps` → Permissions** (кнопка вверху или правая панель «Show info panel») → **Add principal** `app-ci@<PROJECT_ID>.iam.gserviceaccount.com`, Role **Artifact Registry Writer** → Save.
+2. **Artifact Registry → Repositories** (именно список репозиториев, не страница «Images for apps»):
+   - поставить **галочку** слева от `apps`;
+   - справа вверху **Show info panel**, если панель скрыта;
+   - в панели вкладка **Permissions → Add principal** → `app-ci@<PROJECT_ID>.iam.gserviceaccount.com`, Role **Artifact Registry Writer** → Save.
+
+   То же из Cloud Shell:
+   ```bash
+   gcloud artifacts repositories add-iam-policy-binding apps --location=<REGION> \
+     --member=serviceAccount:app-ci@<PROJECT_ID>.iam.gserviceaccount.com --role=roles/artifactregistry.writer
+   ```
 3. **Service Accounts → `app-ci` → вкладка Principals with access → Grant access**:
    - New principals:
      ```
@@ -130,6 +139,7 @@ gcloud artifacts repositories get-iam-policy apps --location=$R --format=json
 gcloud secrets get-iam-policy api-token --format=json
 gcloud run services describe demo-api --region=$R --format='value(status.url,spec.template.spec.serviceAccountName)'
 gcloud run services get-iam-policy demo-api --region=$R --format=json
+gcloud run services describe demo-api --region=$R --format=json | jq '.metadata.annotations["run.googleapis.com/invoker-iam-disabled"]'
 gcloud iam workload-identity-pools providers describe github --location=global --workload-identity-pool=github --format='yaml(name,attributeMapping,attributeCondition,oidc)'
 for sa in app-runtime app-ci app-deployer; do echo "== $sa"; gcloud iam service-accounts get-iam-policy $sa@$P.iam.gserviceaccount.com --format=json; done
 gcloud iam service-accounts keys list --iam-account=app-ci@$P.iam.gserviceaccount.com --managed-by=user

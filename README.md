@@ -40,5 +40,6 @@ _Заполняется по ходу._
 _Дополняется по ходу._ Вопросы к админам Resilens:
 - Allowlist actions в org: разрешены ли `google-github-actions/auth`, `setup-gcloud`, `astral-sh/setup-uv`.
 - Кастомизирован ли шаблон OIDC `sub` в org (`/orgs/{org}/actions/oidc/customization/sub`). От этого зависят principal://-строки для `workloadIdentityUser`.
+- Публичный доступ к DEV: разрешён ли `allUsers` (часто запрещено org policy *Domain Restricted Sharing*) или флаг `--no-invoker-iam-check`. Если нет, smoke должен ходить с ID-токеном, а деплоеру нужен `run.invoker`.
 - Вместо UI-кликов: скрипт или IaC для GCP-части.
 - Hardening: добавить в condition провайдера `repository_id` / `repository_owner_id`, чтобы переименование репо не открывало доступ.
