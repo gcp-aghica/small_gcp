@@ -10,7 +10,7 @@
 | `<PROJECT_ID>` | `anton-cd-lab` | при создании проекта |
 | `<PROJECT_NUMBER>` | `123456789012` | Dashboard → Project info |
 | `<REGION>` | `europe-west6` | |
-| `<OWNER>/<REPO>` | `anton/small-gcp` | GitHub, с учётом регистра |
+| `<ORG>/<REPO>` | `my-lab-org/small-gcp` | организация GitHub и репо, с учётом регистра |
 
 Имена ресурсов (менять не нужно, на них опираются Makefile и workflows):
 Artifact Registry `apps`, сервис Cloud Run `demo-api`, секрет `api-token`,
@@ -73,7 +73,7 @@ SA `app-runtime`, `app-ci`, `app-deployer`, WIF-пул и провайдер `gi
    - `attribute.repository` = `assertion.repository`
 4. Attribute conditions → Add condition:
    ```
-   assertion.repository == '<OWNER>/<REPO>'
+   assertion.repository == '<ORG>/<REPO>'
    ```
 5. **Save**.
 
@@ -90,7 +90,7 @@ projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/provider
 3. **Service Accounts → `app-ci` → вкладка Principals with access → Grant access**:
    - New principals:
      ```
-     principal://iam.googleapis.com/projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/subject/repo:<OWNER>/<REPO>:ref:refs/heads/main
+     principal://iam.googleapis.com/projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/subject/repo:<ORG>/<REPO>:ref:refs/heads/main
      ```
    - Role **Workload Identity User** → Save.
 
@@ -104,13 +104,18 @@ projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/provider
 4. **Service Accounts → `app-deployer` → Principals with access → Grant access**:
    - New principals:
      ```
-     principal://iam.googleapis.com/projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/subject/repo:<OWNER>/<REPO>:environment:dev
+     principal://iam.googleapis.com/projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/subject/repo:<ORG>/<REPO>:environment:dev
      ```
    - Role **Workload Identity User** → Save.
 
 *Зачем:* деплоить может только job с `environment: dev`. GitHub пускает в этот environment только ветку `main`.
 
 **Ключи SA (вкладка Keys) не создаём вообще.**
+
+## 9. (Опционально) Второй человек в проекте
+**IAM & Admin → IAM → Grant access** → Google-аккаунт второго участника, роль **Viewer** (или уже: **Cloud Run Viewer** `roles/run.viewer`).
+
+*Зачем:* он видит ревизии, трафик и логи, но задеплоить руками не может. Менять DEV можно только через merge в `main`: WIF → `app-deployer`. Попробуйте от его имени `gcloud run services update-traffic …` в Cloud Shell, ответ должен быть `PERMISSION_DENIED`.
 
 ---
 
