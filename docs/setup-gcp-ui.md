@@ -11,6 +11,9 @@
 | `<PROJECT_NUMBER>` | `123456789012` | Dashboard → Project info |
 | `<REGION>` | `europe-west6` | |
 | `<ORG>/<REPO>` | `gcp-aghica/small_gcp` | организация GitHub и репо **побуквенно** (регистр, `_` vs `-`) |
+| `<SUB_REPO>` | `gcp-aghica@357501158/small_gcp@1460380554` | часть `sub` после `repo:`; см. «Формат `sub`» в шаге 6 |
+
+Email сервисного аккаунта всегда строится из **ID** проекта: `app-ci@<PROJECT_ID>.iam.gserviceaccount.com`. Номер проекта (`<PROJECT_NUMBER>`) нужен только в имени WIF-провайдера и в `principal://`-строках. Если их перепутать, будет 404 `Gaia id not found`.
 
 Имена ресурсов (менять не нужно, на них опираются Makefile и workflows):
 Artifact Registry `apps`, сервис Cloud Run `demo-api`, секрет `api-token`,
@@ -77,7 +80,24 @@ SA `app-runtime`, `app-ci`, `app-deployer`, WIF-пул и провайдер `gi
    ```
 5. **Save**.
 
-*Зачем:* GitHub выдаёт job OIDC-токен с claim `sub` (например `repo:o/r:ref:refs/heads/main` или `repo:o/r:environment:dev`). Condition отсекает токены всех чужих репозиториев ещё на обмене в STS. Какой SA можно имперсонировать, решают привязки в шагах 7–8 по точному `sub`.
+*Зачем:* GitHub выдаёт job OIDC-токен с claim `sub`. Condition отсекает токены всех чужих репозиториев ещё на обмене в STS. Какой SA можно имперсонировать, решают привязки в шагах 7–8 по точному `sub`.
+
+**Формат `sub`.** Классический формат — `repo:<ORG>/<REPO>:ref:refs/heads/main`. Но в нашей новой org GitHub выдаёт формат с **неизменяемыми ID** организации и репозитория:
+```
+repo:gcp-aghica@357501158/small_gcp@1460380554:ref:refs/heads/main
+repo:gcp-aghica@357501158/small_gcp@1460380554:environment:dev
+```
+`repository` при этом остаётся `gcp-aghica/small_gcp`, поэтому condition проходит, а привязка по классической строке — нет (403 `getAccessToken denied`). Узнать реальный `sub` надёжно можно только из самого токена. Для этого во workflow временно добавляется шаг, который печатает claims токена с `audience=debug`:
+```yaml
+      - name: Debug OIDC claims (temporary)
+        run: |
+          tok=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=debug" | jq -r .value)
+          p=$(echo "$tok" | cut -d. -f2 | tr '_-' '/+')
+          while [ $(( ${#p} % 4 )) -ne 0 ]; do p="$p="; done
+          echo "$p" | base64 -d | jq '{sub, repository, ref, event_name, environment}'
+```
+Policy Troubleshooter федеративных принципалов не разбирает («principal not found»), поэтому на него не рассчитывайте.
 
 Полное имя провайдера (пойдёт в GitHub variable `GCP_WORKLOAD_IDENTITY_PROVIDER`):
 ```
@@ -99,7 +119,7 @@ projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/provider
 3. **Service Accounts → `app-ci` → вкладка Principals with access → Grant access**:
    - New principals:
      ```
-     principal://iam.googleapis.com/projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/subject/repo:<ORG>/<REPO>:ref:refs/heads/main
+     principal://iam.googleapis.com/projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/subject/repo:<SUB_REPO>:ref:refs/heads/main
      ```
    - Role **Workload Identity User** → Save.
 
@@ -113,9 +133,11 @@ projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/provider
 4. **Service Accounts → `app-deployer` → Principals with access → Grant access**:
    - New principals:
      ```
-     principal://iam.googleapis.com/projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/subject/repo:<ORG>/<REPO>:environment:dev
+     principal://iam.googleapis.com/projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/subject/repo:<SUB_REPO>:environment:dev
      ```
    - Role **Workload Identity User** → Save.
+5. **Artifact Registry → Repositories** → галочка у `apps` → **Permissions → Add principal** → `app-deployer@…`, Role **Artifact Registry Reader** → Save.
+   *Зачем:* перед созданием ревизии Cloud Run проверяет, что **тот, кто деплоит**, может прочитать образ. Без этой роли `gcloud run deploy` падает с `artifactregistry.repositories.downloadArtifacts denied`.
 
 *Зачем:* деплоить может только job с `environment: dev`. GitHub пускает в этот environment только ветку `main`.
 
