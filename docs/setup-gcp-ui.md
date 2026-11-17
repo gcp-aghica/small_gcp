@@ -10,7 +10,7 @@
 | `<PROJECT_ID>` | `anton-cd-lab` | при создании проекта |
 | `<PROJECT_NUMBER>` | `123456789012` | Dashboard → Project info |
 | `<REGION>` | `europe-west6` | |
-| `<ORG>/<REPO>` | `my-lab-org/small-gcp` | организация GitHub и репо, с учётом регистра |
+| `<ORG>/<REPO>` | `gcp-aghica/small_gcp` | организация GitHub и репо **побуквенно** (регистр, `_` vs `-`) |
 
 Имена ресурсов (менять не нужно, на них опираются Makefile и workflows):
 Artifact Registry `apps`, сервис Cloud Run `demo-api`, секрет `api-token`,
