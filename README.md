@@ -34,7 +34,8 @@ make build && docker run --rm -p 8000:8000 -e API_TOKEN=local local/demo-api:dev
 9. (Опционально) У B в GCP есть только Viewer: `gcloud run services update-traffic` → `PERMISSION_DENIED`. Деплоить можно только через WIF.
 
 ## Что пошло не так и как починили
-_Заполняется по ходу._
+- **В WIF попал пример вместо реального репо.** В condition провайдера и в двух principal-строках оказался `my-lab-org/small-gcp` из таблицы-примера, а реальное имя `gcp-aghica/small-gcp`. Нашли до первого запуска, сверив `describe` провайдера с именем org на GitHub. Починили: condition и привязки `workloadIdentityUser` у `app-ci` и `app-deployer`. Вывод: сначала создавать org/репо, потом WIF, и сверять `assertion.repository` побуквенно.
+- **В IAM сервиса нет `allUsers`, хотя сервис публичный.** Новая Console при «Allow public access» выключает invoker IAM check на сервисе, а не выдаёт `run.invoker` для `allUsers`.
 
 ## Что переносить в `calculations-api`
 _Дополняется по ходу._ Вопросы к админам Resilens:

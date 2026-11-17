@@ -42,7 +42,8 @@ OIDC `sub` будет `repo:<ORG>/<REPO>:…`. Так же записаны prin
     astral-sh/setup-uv@*
     ```
 - *Workflow permissions* → **Read repository contents and packages permissions**; галочку *Allow GitHub Actions to create and approve pull requests* не ставить.
-- *Fork pull request workflows from outside collaborators* → **Require approval for all outside collaborators** (для public репо).
+- *Approval for running fork pull request workflows from contributors* → **Require approval for all external contributors** → Save. Без approval workflows из чужих форков в public репо не стартуют.
+- *Fork pull request workflows in private and internal repositories* → оставить выключенным (для public репо не действует).
 
 *Зачем:* в Resilens allowlist actions почти наверняка уже есть. Здесь видно, что любое новое action придётся согласовывать с админами org.
 
