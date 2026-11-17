@@ -1,0 +1,77 @@
+name: cd
+
+on:
+  workflow_call:
+    inputs:
+      sha:
+        description: Полный SHA коммита (= тег образа в Artifact Registry)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  # Деплоим только самый свежий коммит main. Если пока шла сборка, в main уже
+  # влили что-то новее, этот run ничего не катит: новый run задеплоит свой SHA.
+  newest:
+    runs-on: ubuntu-latest
+    outputs:
+      is_newest: ${{ steps.check.outputs.is_newest }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          head=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)
+          if [[ "$head" == "$SHA" ]]; then
+            echo "is_newest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_newest=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### DEV deploy: Skipped"
+              echo "\`${SHA}\` is not the HEAD of \`main\` (HEAD is \`${head}\`). A newer run will deploy."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  deploy:
+    needs: newest
+    if: needs.newest.outputs.is_newest == 'true'
+    runs-on: ubuntu-latest
+    environment: dev # OIDC sub=repo:<owner>/<repo>:environment:dev
+    concurrency:
+      group: cd-dev
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      SHA: ${{ inputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Write .env.dev
+        env:
+          DEPLOY_ENV: ${{ vars.DEPLOY_ENV }}
+        run: printf '%s\n' "$DEPLOY_ENV" > .env.dev
+      - name: Deploy (no traffic)
+        run: make ENV=dev IMAGE_TAG="$SHA" REGISTRY=${{ vars.REGISTRY }} deploy
+      - name: Smoke test tagged revision
+        run: make ENV=dev IMAGE_TAG="$SHA" smoke
+      - name: Switch traffic
+        run: make ENV=dev IMAGE_TAG="$SHA" switch-traffic
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### DEV deploy: ${{ job.status }}"
+            echo "- SHA: \`${SHA}\`"
+            echo "- Revision tag: \`sha-${SHA:0:7}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
