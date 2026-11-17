@@ -70,7 +70,8 @@ smoke: ## Проверить ревизию по URL её тега (ENV, IMAGE_T
 	echo "Smoke URL: $$url"
 	code=000
 	for i in $$(seq 1 10); do
-	  code=$$(curl -s -o /tmp/health.json -w '%{http_code}' "$$url/health" || true)
+	  # BROKEN ON PURPOSE (сценарий 2): /healthz не существует -> 404, smoke должен упасть.
+	  code=$$(curl -s -o /tmp/health.json -w '%{http_code}' "$$url/healthz" || true)
 	  if [[ "$$code" == "200" ]]; then break; fi
 	  echo "attempt $$i: /health -> $$code, retrying"; sleep 3
 	done
