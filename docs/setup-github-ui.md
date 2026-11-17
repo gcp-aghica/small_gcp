@@ -14,12 +14,14 @@
 
 | Аккаунт | Роль в org | Роль в репо | Что делает |
 |---|---|---|---|
-| основной (A) | Owner | Admin | настраивает org, environments, variables, rulesets |
-| второй (B) | Member | Write | открывает PR и мержит, как обычный разработчик |
+| A = `toha-livs` | Owner | Admin | настраивает org, environments, variables, rulesets |
+| B = `anton-finbert` | Member | Write | открывает PR и мержит, как обычный разработчик |
 
-Про второй аккаунт: GitHub ToS разрешают одному человеку только один бесплатный личный аккаунт (исключение — machine account). Поэтому B — это существующий рабочий `anton-olivson-resilens` или аккаунт коллеги, а не новый «второй я».
+Про второй аккаунт: GitHub ToS разрешают одному человеку только один бесплатный личный аккаунт (исключение — machine account). Поэтому B — это существующий аккаунт (свой второй рабочий или коллеги), а не новый «второй я».
 
-OIDC `sub` будет `repo:<ORG>/<REPO>:…`. Так же записаны principal-строки в [setup-gcp-ui.md](setup-gcp-ui.md).
+OIDC `sub` в этой org идёт в формате с ID: `repo:<ORG>@<org_id>/<REPO>@<repo_id>:…`. Под него и записаны principal-строки в [setup-gcp-ui.md](setup-gcp-ui.md) (шаг 6, «Формат `sub`»).
+
+**Значения переменных вводите одной строкой, без Enter в конце и в середине.** Лишний перевод строки в `GCP_SERVICE_ACCOUNT` превратил ID проекта в `anton-cd-lab\n`, и `setup-gcloud` упал с `is not a valid project ID`. И проверяйте, что в `GCP_CI_SERVICE_ACCOUNT` стоит именно `app-ci`, а не `app-deployer`: иначе 403 `getAccessToken denied`, хотя все привязки в GCP верны.
 
 ---
 
@@ -55,7 +57,7 @@ OIDC `sub` будет `repo:<ORG>/<REPO>:…`. Так же записаны prin
 ## 4. Environment `dev` (под A)
 **Repo → Settings → Environments → New environment** → `dev`:
 1. **Deployment branches and tags** → *Selected branches and tags* → Add rule → `main`.
-   *Зачем:* job с `environment: dev` получает OIDC `sub=repo:<ORG>/<REPO>:environment:dev`, а именно этот sub привязан к `app-deployer`. Ограничение по ветке не даёт другим веткам получить такой токен.
+   *Зачем:* job с `environment: dev` получает OIDC `sub=repo:<ORG>@<org_id>/<REPO>@<repo_id>:environment:dev`, а именно этот sub привязан к `app-deployer`. Ограничение по ветке не даёт другим веткам получить такой токен.
 2. Required reviewers и wait timer **не включать**: деплой в DEV полностью автоматический.
 3. **Environment variables → Add variable**:
    - `GCP_SERVICE_ACCOUNT` = `app-deployer@<PROJECT_ID>.iam.gserviceaccount.com`
@@ -92,7 +94,7 @@ Environment secrets не создаём: секретов в GitHub нет.
 ```bash
 ssh -T git@github.com
 ```
-Push в пустой `main` делает A. Если SSH-ключ на этой машине принадлежит B (`anton-olivson-resilens`), сделайте одно из двух:
+Push в пустой `main` делает A. Если SSH-ключ на этой машине принадлежит другому аккаунту (у нас дефолтный ключ был от `anton-olivson-resilens`), сделайте одно из двух:
 - временно дайте B роль Admin;
 - заведите для A host-алиас в `~/.ssh/config` (например `github-a`) и remote `git@github-a:<ORG>/<REPO>.git`.
 ```bash
