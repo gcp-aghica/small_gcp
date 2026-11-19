@@ -9,3 +9,5 @@
 .env.*
 tests
 docs
+infra
+scripts

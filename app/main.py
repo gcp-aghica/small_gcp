@@ -1,42 +1,52 @@
 import os
-import secrets
-from typing import Annotated
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+import httpx
+from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="demo-api")
-
-# auto_error=False: без заголовка получаем None и сами отдаём 401 (а не 403 по умолчанию).
-bearer = HTTPBearer(auto_error=False)
-
-ITEMS = [
-    {"id": 1, "name": "alpha"},
-    {"id": 2, "name": "beta"},
-]
+from app.auth import current_user
+from app.settings import get_settings, split_origins
+from app.upstream import get_series, observation_client
 
 
-def require_token(
-    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
-) -> None:
-    expected = os.environ.get("API_TOKEN", "")
-    if not expected or creds is None or not secrets.compare_digest(creds.credentials, expected):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unauthorized",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    # Без обязательных переменных падаем при старте: Cloud Run не переключит трафик.
+    get_settings()
+    yield
+
+
+app = FastAPI(title="calculations-api (sandbox)", lifespan=lifespan)
+
+# Middleware добавляется при импорте, до lifespan, поэтому CORS_ORIGINS читаем из env напрямую:
+# импорт не должен падать на неполном конфиге (обязательные поля проверяет lifespan).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=split_origins(os.environ.get("CORS_ORIGINS", "")),
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
+    return {"status": "ok", "git_sha": get_settings().git_sha}
+
+
+@app.get("/risk/site")
+def risk_site(
+    site_id: str,
+    user: Annotated[dict[str, Any], Depends(current_user)],
+    client: Annotated[httpx.Client, Depends(observation_client)],
+) -> dict[str, Any]:
+    series = get_series(client, site_id)
+    values = [p["value"] for p in series.get("points", [])]
     return {
-        "status": "ok",
-        "version": os.environ.get("APP_VERSION", "dev"),
-        "git_sha": os.environ.get("GIT_SHA", "unknown"),
+        "site_id": site_id,
+        "user": user.get("sub"),
+        "points": len(values),
+        "max_temperature": max(values) if values else None,
     }
-
-
-@app.get("/items", dependencies=[Depends(require_token)])
-def list_items() -> list[dict]:
-    return ITEMS

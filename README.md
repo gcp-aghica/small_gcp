@@ -1,37 +1,37 @@
 # small-gcp
 
-Учебный FastAPI-сервис `demo-api`. На нём отрабатываем trunk-based CI/CD на Cloud Run до переноса в `calculations-api`.
-Репо живёт в GitHub-организации `gcp-aghica` с двумя участниками: A = `toha-livs` (Owner/Admin) и B = `anton-finbert` (Member/Write). Подробности в [docs/setup-github-ui.md](docs/setup-github-ui.md).
+Песочница для CD `calculations-api`: та же конфигурация (имена переменных, секретов, ресурсов), та же схема CI/CD,
+но в своём GCP-проекте `anton-cd-lab` и репо `gcp-aghica/small_gcp`. Отлаживаем здесь, потом переносим на DEV (`resilens-app-staging`).
+Участники org: A = `toha-livs` (Owner/Admin), B = `anton-finbert` (Member/Write), см. [docs/setup-github-ui.md](docs/setup-github-ui.md).
+
+| Путь | Что | Деплой |
+|---|---|---|
+| `app/` | аналог `calculations-api`: `Settings` с теми же env, `/health` с `git_sha`, `/risk/site` под JWT → Observation с bearer-токеном | CD |
+| `upstreams/` | заглушки `observation-store-api`, `metadata-api`, `workspace-auth` (JWKS вместо Workspace Supabase) | руками, `make upstreams` |
+| `scripts/` | секреты (`ensure-*secrets.sh`), `run.developer` для CI/CD SA, выпуск тестового JWT | руками |
+| `infra/` | Terraform: API, registry, сервисные аккаунты, WIF. [Инструкция и сценарии](infra/README.md) | руками |
+| `Dockerfile` | один файл, target на каждый сервис | |
+| `.github/workflows/ci.yml` | PR: `lint`, `test`, `build-pr` (без доступа к GCP) | |
+| `.github/workflows/cd.yml` | `main`: test → build → push (тег = SHA) → `gcloud run deploy --image` → smoke, группа `cd-dev` | |
 
 ```bash
 make install && make test
+make build   # local/calculations-api:dev
+make help    # все цели, включая ручные
 ```
-```bash
-make build && docker run --rm -p 8000:8000 -e API_TOKEN=local local/demo-api:dev
-```
+
+Проект и регион `Makefile` выводит из `REGISTRY`, поэтому в GitHub нужны только `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`, `REGISTRY`.
 
 ## Как поднять с нуля
-1. [GCP руками в Console](docs/setup-gcp-ui.md) и проверка в Cloud Shell.
-2. [GitHub org, репо, environment, variables](docs/setup-github-ui.md), bootstrap push `main`.
-3. PR с `.github/workflows/`, после первого прогона включить ruleset на `main`.
-4. Merge = первый автодеплой.
+1. GCP-проект с billing ([docs/setup-gcp-ui.md](docs/setup-gcp-ui.md), шаг 1).
+2. [GitHub org, репо](docs/setup-github-ui.md), required checks `lint`, `test`, `build-pr` на `main`.
+3. [infra/README.md](infra/README.md): Terraform (аккаунты, WIF), upstream-ы и секреты, первый деплой calculations-api, GitHub variables. Merge = деплой через CD.
 
-Удаление: [docs/teardown-ui.md](docs/teardown-ui.md).
+Сценарии проверок (деплой только образа, ревизия без обязательной переменной, общий токен, два merge подряд, PR без GCP): [infra/README.md](infra/README.md#сценарии).
 
-## Сценарии проверок
-**Flow**
-1. **Обычный деплой.** После merge трафик 100% на ревизии `sha-xxxxxxx`, `/health` показывает новый `git_sha`.
-2. **Падающий smoke.** Job `deploy` красный, трафик остаётся на старой ревизии. Чиним новым PR.
-3. **WIF из PR.** PR с временным шагом `auth@v2` под `app-ci` падает на auth (`sub=…:pull_request` не привязан). Не мержим.
-4. **Два merge подряд.** У более раннего коммита job `newest` пишет «Skipped». При трёх быстрых merge средний run будет *cancelled* из-за `concurrency`, а не skipped.
+Ещё не перенесено из `calculations-api`: приватная git-зависимость (аналог `research-sdk`) с токеном через BuildKit-секрет `research_sdk_repo_token`.
 
-**Роли (от лица B)**
-
-5. B может открыть PR, но `git push origin main` отклоняется ruleset-ом.
-6. Merge без зелёных `lint`/`test` или с устаревшей веткой невозможен.
-7. B не видит Settings: environments, variables и rulesets не открываются и не меняются.
-8. (Опционально) Environment `prod-like` с required reviewer: B мержит, деплой ждёт approve от A. Self-review запрещён.
-9. (Опционально) У B в GCP есть только Viewer: `gcloud run services update-traffic` → `PERMISSION_DENIED`. Деплоить можно только через WIF.
+История ниже относится к первой версии (`demo-api`, ресурсы руками, два SA, `newest` + no-traffic/switch-traffic).
 
 ## Что пошло не так и как починили
 Первый автодеплой (run #4, `2787a3b`) прошёл после шести исправлений:
@@ -52,5 +52,5 @@ _Дополняется по ходу._ Вопросы к админам Resilen
 - Деплоеру, кроме `run.developer` на сервис и `serviceAccountUser` на runtime SA, нужен `artifactregistry.reader` на репозиторий с образами.
 - В `auth@v2` сразу ставить `token_format: access_token`.
 - Публичный доступ к DEV: разрешён ли `allUsers` (часто запрещено org policy *Domain Restricted Sharing*) или флаг `--no-invoker-iam-check`. Если нет, smoke должен ходить с ID-токеном, а деплоеру нужен `run.invoker`.
-- Вместо UI-кликов: скрипт или IaC для GCP-части.
-- Hardening: добавить в condition провайдера `repository_id` / `repository_owner_id`, чтобы переименование репо не открывало доступ.
+- Вместо UI-кликов: скрипт или IaC для GCP-части. В песочнице аккаунты и WIF в Terraform (`infra/`), сервисы и секреты скриптами, как на DEV.
+- Hardening: condition провайдера по `repository_id` / `repository_owner_id`, чтобы переименование репо не открывало доступ (в песочнице сделано).

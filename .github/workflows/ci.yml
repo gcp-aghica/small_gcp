@@ -1,12 +1,16 @@
 name: ci
 
+# PR: lint, test, сборка образов без push. Доступа к GCP нет: id-token не выдаётся,
+# а sub ...:pull_request не привязан к CI/CD SA.
 on:
   pull_request:
-  push:
-    branches: [main]
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   lint:
@@ -26,43 +30,8 @@ jobs:
       - run: make install
       - run: make test
 
-  # PR: проверяем, что образ собирается. Без push и без какого-либо доступа к GCP.
   build-pr:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: make build REGISTRY=local IMAGE_TAG=${{ github.event.pull_request.head.sha }}
-
-  # main: собираем образ один раз, тег = полный SHA коммита.
-  build-main:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [lint, test]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write # OIDC-токен для WIF, sub=repo:<org>@<org_id>/<repo>@<repo_id>:ref:refs/heads/main
-    steps:
-      - uses: actions/checkout@v4
-      - uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_CI_SERVICE_ACCOUNT }}
-          # Сразу получить токен SA: ошибки WIF/IAM падают здесь, а не позже в docker push.
-          token_format: access_token
-      - uses: google-github-actions/setup-gcloud@v2
-      - name: Configure docker for Artifact Registry
-        run: gcloud auth configure-docker "${REGISTRY%%/*}" --quiet
-        env:
-          REGISTRY: ${{ vars.REGISTRY }}
-      - run: make build REGISTRY=${{ vars.REGISTRY }} IMAGE_TAG=${{ github.sha }}
-      - run: make push REGISTRY=${{ vars.REGISTRY }} IMAGE_TAG=${{ github.sha }}
-
-  deploy-dev:
-    needs: build-main
-    permissions:
-      contents: read
-      id-token: write # reusable workflow получает не больше прав, чем выдал вызывающий job
-    uses: ./.github/workflows/cd.yml
-    with:
-      sha: ${{ github.sha }}

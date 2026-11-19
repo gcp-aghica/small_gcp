@@ -1,78 +1,56 @@
 name: cd
 
+# main: test -> build -> push (тег = SHA) -> deploy образа -> smoke.
 on:
-  workflow_call:
-    inputs:
-      sha:
-        description: Полный SHA коммита (= тег образа в Artifact Registry)
-        required: true
-        type: string
+  push:
+    branches: [main]
 
 permissions:
   contents: read
 
-jobs:
-  # Деплоим только самый свежий коммит main. Если пока шла сборка, в main уже
-  # влили что-то новее, этот run ничего не катит: новый run задеплоит свой SHA.
-  newest:
-    runs-on: ubuntu-latest
-    outputs:
-      is_newest: ${{ steps.check.outputs.is_newest }}
-    steps:
-      - id: check
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SHA: ${{ inputs.sha }}
-        run: |
-          head=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)
-          if [[ "$head" == "$SHA" ]]; then
-            echo "is_newest=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_newest=false" >> "$GITHUB_OUTPUT"
-            {
-              echo "### DEV deploy: Skipped"
-              echo "\`${SHA}\` is not the HEAD of \`main\` (HEAD is \`${head}\`). A newer run will deploy."
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
+# Весь run в одной группе, без отмены текущего: пока идёт деплой, GitHub держит
+# в очереди только самый свежий run, промежуточные отменяются. Группа на уровне
+# workflow, а не job: иначе более старый run мог бы дойти до deploy позже нового.
+concurrency:
+  group: cd-dev
+  cancel-in-progress: false
 
-  deploy:
-    needs: newest
-    if: needs.newest.outputs.is_newest == 'true'
+jobs:
+  test:
     runs-on: ubuntu-latest
-    environment: dev # OIDC sub=repo:<owner>/<repo>:environment:dev
-    concurrency:
-      group: cd-dev
-      cancel-in-progress: false
-    permissions:
-      contents: read
-      id-token: write
-    env:
-      SHA: ${{ inputs.sha }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.sha }}
+      - uses: astral-sh/setup-uv@v6
+      - run: make install
+      - run: make test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # sub=repo:<org>@<org_id>/<repo>@<repo_id>:ref:refs/heads/main
+    env:
+      REGISTRY: ${{ vars.REGISTRY }}
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          # Сразу получить токен SA: ошибки WIF/IAM падают здесь, а не позже в docker push.
           token_format: access_token
       - uses: google-github-actions/setup-gcloud@v2
-      - name: Write .env.dev
-        env:
-          DEPLOY_ENV: ${{ vars.DEPLOY_ENV }}
-        run: printf '%s\n' "$DEPLOY_ENV" > .env.dev
-      - name: Deploy (no traffic)
-        run: make ENV=dev IMAGE_TAG="$SHA" REGISTRY=${{ vars.REGISTRY }} deploy
-      - name: Smoke test tagged revision
-        run: make ENV=dev IMAGE_TAG="$SHA" smoke
-      - name: Switch traffic
-        run: make ENV=dev IMAGE_TAG="$SHA" switch-traffic
+      - run: gcloud auth configure-docker "${REGISTRY%%/*}" --quiet
+      - run: make build
+      - run: make push
+      - run: make deploy
+      - run: make smoke
       - name: Summary
         if: always()
         run: |
           {
             echo "### DEV deploy: ${{ job.status }}"
-            echo "- SHA: \`${SHA}\`"
-            echo "- Revision tag: \`sha-${SHA:0:7}\`"
+            echo "- SHA: \`${IMAGE_TAG}\`"
           } >> "$GITHUB_STEP_SUMMARY"
